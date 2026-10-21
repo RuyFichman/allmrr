@@ -113,8 +113,8 @@ select
   bm.id,
   case when s.curve is not null then 'approved' else 'pending' end::public.model_review_status,
   s.status,
-  -- Seeded revenue stands in for a provider sync, so those rows count as verified.
-  s.curve is not null,
+  -- Only a live provider connection verifies revenue (Sprint 2), so seed data never does.
+  false,
   case when s.status = 'published' then now() - (s.n || ' days')::interval end,
   ('10000000-0000-4000-8000-' || lpad(s.founder::text, 12, '0'))::uuid,
   now() - ((60 + s.n) || ' days')::interval
