@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { BadgeCheckIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StartupLogo } from "@/components/startup-logo";
+import { VerifiedBadge } from "@/components/verified-badge";
 import type { StartupSummary } from "@/lib/data/startups";
 import { formatPercent, formatUsdCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ export function StartupCard({ startup }: { startup: StartupSummary }) {
               {startup.name}
             </Link>
             {startup.isVerified && (
-              <BadgeCheckIcon className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Verified revenue" />
+              <VerifiedBadge providers={startup.verifiedProviders} verifiedAt={startup.verifiedAt} compact />
             )}
           </h3>
           {startup.tagline && (
@@ -35,7 +35,8 @@ export function StartupCard({ startup }: { startup: StartupSummary }) {
       </div>
 
       <div className="flex items-baseline justify-between border-t pt-3 text-sm">
-        {startup.mrrCents !== null ? (
+        {/* Only verified revenue is shown publicly. */}
+        {startup.isVerified && startup.mrrCents !== null ? (
           <>
             <span>
               <span className="font-semibold tabular-nums">{formatUsdCompact(startup.mrrCents)}</span>
@@ -56,7 +57,7 @@ export function StartupCard({ startup }: { startup: StartupSummary }) {
             )}
           </>
         ) : (
-          <span className="text-muted-foreground">Not verified yet</span>
+          <span className="text-muted-foreground">Not verified</span>
         )}
       </div>
     </article>
