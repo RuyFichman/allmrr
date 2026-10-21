@@ -22,3 +22,14 @@ export function formatUsdCompact(cents: number) {
 export function formatPercent(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
+
+const dateTimeUtc = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "UTC",
+});
+
+// Server-rendered timestamps use UTC so server and client output always match.
+export function formatDateTimeUtc(iso: string) {
+  return `${dateTimeUtc.format(new Date(iso))} UTC`;
+}

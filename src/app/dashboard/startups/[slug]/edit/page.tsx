@@ -5,6 +5,7 @@ import { getBusinessModels, getNiches } from "@/lib/data/taxonomy";
 import { createClient } from "@/lib/supabase/server";
 import { updateStartup } from "../../actions";
 import { StartupForm } from "../../startup-form";
+import { RevenueSection } from "./revenue-section";
 
 export const metadata: Metadata = { title: "Edit startup" };
 
@@ -83,6 +84,7 @@ async function EditForm({ params, searchParams }: PageProps<"/dashboard/startups
           logoUrl: startup.logo_url,
         }}
       />
+      <RevenueSection startupId={startup.id} />
     </div>
   );
 }
