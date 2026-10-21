@@ -98,6 +98,8 @@ export type ValidationResult =
 
 export type ProviderContext = {
   credentials: string;
+  // Counters the adapter increments (skipped items, unresolved coupons…), stored in sync_runs.
+  stats: Record<string, number>;
 };
 
 export interface RevenueProvider {
