@@ -1,8 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { cacheLife } from "next/cache";
 import { Button } from "@/components/ui/button";
+import { ModelsMenu } from "@/components/models-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
+import { getBusinessModels } from "@/lib/data/taxonomy";
 import { createClient } from "@/lib/supabase/server";
 
 export function SiteHeader() {
@@ -13,7 +16,8 @@ export function SiteHeader() {
           AllMRR
         </Link>
         <nav className="hidden items-center gap-4 text-sm text-muted-foreground sm:flex">
-          <Link href="/" className="hover:text-foreground">Leaderboard</Link>
+          <Link href="/startups" className="hover:text-foreground">Startups</Link>
+          <ModelsNav />
           <Link href="/acquire" className="hover:text-foreground">For sale</Link>
         </nav>
         <div className="ml-auto flex items-center gap-2">
@@ -25,6 +29,14 @@ export function SiteHeader() {
       </div>
     </header>
   );
+}
+
+async function ModelsNav() {
+  "use cache";
+  cacheLife("days");
+
+  const models = await getBusinessModels();
+  return <ModelsMenu models={models.map(({ slug, name }) => ({ slug, name }))} />;
 }
 
 async function AccountSlot() {
