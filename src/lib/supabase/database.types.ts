@@ -50,6 +50,74 @@ export type Database = {
         }
         Relationships: []
       }
+      connection_revenue_snapshots: {
+        Row: {
+          active_subscriptions: number
+          connection_id: string
+          created_at: string
+          date: string
+          is_estimated: boolean
+          mrr_cents: number
+          revenue_cents: number
+          revenue_total_cents: number
+          updated_at: string
+        }
+        Insert: {
+          active_subscriptions?: number
+          connection_id: string
+          created_at?: string
+          date: string
+          is_estimated?: boolean
+          mrr_cents?: number
+          revenue_cents?: number
+          revenue_total_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          active_subscriptions?: number
+          connection_id?: string
+          created_at?: string
+          date?: string
+          is_estimated?: boolean
+          mrr_cents?: number
+          revenue_cents?: number
+          revenue_total_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_revenue_snapshots_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "revenue_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fx_rates: {
+        Row: {
+          created_at: string
+          currency: string
+          date: string
+          source: string
+          usd_rate: number
+        }
+        Insert: {
+          created_at?: string
+          currency: string
+          date: string
+          source?: string
+          usd_rate: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          date?: string
+          source?: string
+          usd_rate?: number
+        }
+        Relationships: []
+      }
       listings: {
         Row: {
           asking_price_cents: number
@@ -160,10 +228,17 @@ export type Database = {
       }
       revenue_connections: {
         Row: {
+          consecutive_failures: number
           created_at: string
-          encrypted_credentials: string
+          disconnected_at: string | null
+          encrypted_credentials: string | null
+          external_account_id: string | null
           id: string
+          key_last4: string | null
+          key_version: number | null
           last_error: string | null
+          last_success_at: string | null
+          last_sync_started_at: string | null
           last_synced_at: string | null
           provider: Database["public"]["Enums"]["revenue_provider"]
           startup_id: string
@@ -171,10 +246,17 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          consecutive_failures?: number
           created_at?: string
-          encrypted_credentials: string
+          disconnected_at?: string | null
+          encrypted_credentials?: string | null
+          external_account_id?: string | null
           id?: string
+          key_last4?: string | null
+          key_version?: number | null
           last_error?: string | null
+          last_success_at?: string | null
+          last_sync_started_at?: string | null
           last_synced_at?: string | null
           provider: Database["public"]["Enums"]["revenue_provider"]
           startup_id: string
@@ -182,10 +264,17 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          consecutive_failures?: number
           created_at?: string
-          encrypted_credentials?: string
+          disconnected_at?: string | null
+          encrypted_credentials?: string | null
+          external_account_id?: string | null
           id?: string
+          key_last4?: string | null
+          key_version?: number | null
           last_error?: string | null
+          last_success_at?: string | null
+          last_sync_started_at?: string | null
           last_synced_at?: string | null
           provider?: Database["public"]["Enums"]["revenue_provider"]
           startup_id?: string
@@ -214,7 +303,9 @@ export type Database = {
           active_subscriptions: number
           created_at: string
           date: string
+          is_estimated: boolean
           mrr_cents: number
+          revenue_cents: number
           revenue_total_cents: number
           startup_id: string
           updated_at: string
@@ -223,7 +314,9 @@ export type Database = {
           active_subscriptions?: number
           created_at?: string
           date: string
+          is_estimated?: boolean
           mrr_cents?: number
+          revenue_cents?: number
           revenue_total_cents?: number
           startup_id: string
           updated_at?: string
@@ -232,7 +325,9 @@ export type Database = {
           active_subscriptions?: number
           created_at?: string
           date?: string
+          is_estimated?: boolean
           mrr_cents?: number
+          revenue_cents?: number
           revenue_total_cents?: number
           startup_id?: string
           updated_at?: string
@@ -398,10 +493,52 @@ export type Database = {
           },
         ]
       }
+      sync_runs: {
+        Row: {
+          connection_id: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          started_at: string
+          stats: Json
+          status: string
+          trigger: string
+        }
+        Insert: {
+          connection_id: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          stats?: Json
+          status?: string
+          trigger: string
+        }
+        Update: {
+          connection_id?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          started_at?: string
+          stats?: Json
+          status?: string
+          trigger?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_runs_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "revenue_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       startup_directory: {
         Row: {
+          active_subscriptions: number | null
           business_model_name: string | null
           business_model_slug: string | null
           created_at: string | null
@@ -415,9 +552,12 @@ export type Database = {
           niche_slug: string | null
           published_at: string | null
           revenue_as_of: string | null
+          revenue_is_estimated: boolean | null
           revenue_total_cents: number | null
           slug: string | null
           tagline: string | null
+          verified_at: string | null
+          verified_providers: string[] | null
           website_url: string | null
           x_handle: string | null
         }
@@ -425,7 +565,28 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      claim_connection_sync: {
+        Args: { p_connection_id: string; p_stale_after_seconds?: number }
+        Returns: boolean
+      }
+      consume_rate_limit: {
+        Args: {
+          p_action: string
+          p_max: number
+          p_subject_id: string
+          p_user_id: string
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
+      refresh_startup_revenue: {
+        Args: { p_startup_id: string }
+        Returns: undefined
+      }
+      refresh_verification: {
+        Args: { p_startup_id?: string }
+        Returns: undefined
+      }
     }
     Enums: {
       listing_status: "active" | "under_offer" | "sold" | "withdrawn"

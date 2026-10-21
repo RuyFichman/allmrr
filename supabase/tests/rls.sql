@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(18);
+select plan(26);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the table owner, so RLS does not apply)
@@ -27,8 +27,20 @@ values
   ('00000000-0000-4000-b000-000000000003', 'rls-alice-hidden', 'Alice Hidden', 'https://hidden.test',
    (select id from public.business_models where slug = 'saas'), 'hidden', '00000000-0000-4000-a000-00000000000a');
 
-insert into public.revenue_connections (startup_id, provider, encrypted_credentials)
-values ('00000000-0000-4000-b000-000000000002', 'stripe', 'ciphertext');
+insert into public.revenue_connections (id, startup_id, provider, encrypted_credentials, key_last4)
+values
+  ('00000000-0000-4000-c000-000000000001', '00000000-0000-4000-b000-000000000002', 'stripe', 'ciphertext', 'ab12'),
+  ('00000000-0000-4000-c000-000000000002', '00000000-0000-4000-b000-000000000001', 'stripe', 'ciphertext-draft', 'cd34');
+
+insert into public.connection_revenue_snapshots (connection_id, date, mrr_cents, revenue_total_cents)
+values
+  ('00000000-0000-4000-c000-000000000001', current_date, 1000, 5000),
+  ('00000000-0000-4000-c000-000000000002', current_date, 2000, 9000);
+
+insert into public.sync_runs (connection_id, trigger, status)
+values ('00000000-0000-4000-c000-000000000001', 'manual', 'succeeded');
+
+insert into public.fx_rates (date, currency, usd_rate) values (current_date, 'EUR', 1.1);
 
 -- ---------------------------------------------------------------------------
 -- Triggers
@@ -80,6 +92,26 @@ select throws_ok(
   'anon cannot read encrypted_credentials'
 );
 
+select is(
+  (select count(*)::int from public.connection_revenue_snapshots),
+  1,
+  'anon reads connection snapshots of published startups only'
+);
+
+select throws_ok(
+  $$ select * from public.fx_rates $$,
+  '42501',
+  null,
+  'anon cannot read fx_rates'
+);
+
+select throws_ok(
+  $$ select public.refresh_verification() $$,
+  '42501',
+  null,
+  'anon cannot call the verification refresh'
+);
+
 -- ---------------------------------------------------------------------------
 -- User B (not a founder)
 -- ---------------------------------------------------------------------------
@@ -108,6 +140,19 @@ select throws_ok(
   'user B cannot add themselves as a founder'
 );
 
+select is(
+  (select count(*)::int from public.sync_runs),
+  0,
+  'user B cannot see user A''s sync runs'
+);
+
+select throws_ok(
+  $$ select public.consume_rate_limit('00000000-0000-4000-a000-00000000000b', 'connect', '00000000-0000-4000-b000-000000000002', 1000, 1) $$,
+  '42501',
+  null,
+  'clients cannot call the rate limiter directly'
+);
+
 select throws_ok(
   $$ insert into public.startups (slug, name, website_url, declared_business_model_id, created_by)
      values ('rls-spoof', 'Spoof', 'https://spoof.test',
@@ -131,9 +176,30 @@ select throws_ok(
 );
 
 select is(
-  (select provider::text from public.revenue_connections where startup_id = '00000000-0000-4000-b000-000000000002'),
-  'stripe',
+  (select key_last4 from public.revenue_connections where startup_id = '00000000-0000-4000-b000-000000000002'),
+  'ab12',
   'founders can read connection metadata'
+);
+
+select is(
+  (select count(*)::int from public.sync_runs),
+  1,
+  'founders see their sync runs'
+);
+
+select throws_ok(
+  $$ update public.revenue_connections set status = 'active' where startup_id = '00000000-0000-4000-b000-000000000002' $$,
+  '42501',
+  null,
+  'founders cannot write connections directly'
+);
+
+select throws_ok(
+  $$ insert into public.connection_revenue_snapshots (connection_id, date, mrr_cents)
+     values ('00000000-0000-4000-c000-000000000001', current_date - 1, 99999999) $$,
+  '42501',
+  null,
+  'founders cannot write snapshots'
 );
 
 select throws_ok(

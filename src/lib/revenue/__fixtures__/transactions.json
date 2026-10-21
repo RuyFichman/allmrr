@@ -1,0 +1,12 @@
+[
+  { "id": "txn_charge_1", "createdAt": "2026-10-01T10:00:00.000Z", "amount": 10000, "currency": "usd", "category": "charge" },
+  { "id": "txn_charge_2", "createdAt": "2026-10-01T23:59:00.000Z", "amount": 5000, "currency": "usd", "category": "charge" },
+  { "id": "txn_payout", "createdAt": "2026-10-01T12:00:00.000Z", "amount": -12000, "currency": "usd", "category": "other" },
+  { "id": "txn_refund", "createdAt": "2026-10-02T09:00:00.000Z", "amount": -2500, "currency": "usd", "category": "refund" },
+  { "id": "txn_dispute_lost", "createdAt": "2026-10-03T09:00:00.000Z", "amount": -5000, "currency": "usd", "category": "dispute" },
+  { "id": "txn_dispute_open", "createdAt": "2026-10-03T10:00:00.000Z", "amount": -3000, "currency": "usd", "category": "dispute" },
+  { "id": "txn_dispute_won", "createdAt": "2026-10-04T09:00:00.000Z", "amount": 3000, "currency": "usd", "category": "dispute_reversal" },
+  { "id": "txn_refund_failed", "createdAt": "2026-10-04T10:00:00.000Z", "amount": 1000, "currency": "usd", "category": "refund_failure" },
+  { "id": "txn_eur", "createdAt": "2026-10-05T10:00:00.000Z", "amount": 10000, "currency": "eur", "category": "charge" },
+  { "id": "txn_eur_weekend", "createdAt": "2026-10-04T15:00:00.000Z", "amount": 2000, "currency": "eur", "category": "charge" }
+]

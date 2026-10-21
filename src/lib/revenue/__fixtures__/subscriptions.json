@@ -1,0 +1,144 @@
+{
+  "defaults": {
+    "status": "active",
+    "currency": "usd",
+    "startDate": "2026-01-10T12:00:00.000Z",
+    "trialStart": null,
+    "trialEnd": null,
+    "canceledAt": null,
+    "endedAt": null,
+    "cancelAtPeriodEnd": false,
+    "discounts": []
+  },
+  "itemDefaults": {
+    "quantity": 1,
+    "usageType": "licensed",
+    "interval": "month",
+    "intervalCount": 1,
+    "billingScheme": "per_unit",
+    "unitAmount": 2900,
+    "tiersMode": null,
+    "tiers": [],
+    "transformQuantity": null,
+    "discounts": []
+  },
+  "subscriptions": {
+    "monthly": { "items": [{}] },
+    "annual": { "items": [{ "interval": "year", "unitAmount": 120000 }] },
+    "weekly": { "items": [{ "interval": "week", "unitAmount": 1000 }] },
+    "daily": { "items": [{ "interval": "day", "unitAmount": 100 }] },
+    "quarterly": { "items": [{ "interval": "month", "intervalCount": 3, "unitAmount": 9000 }] },
+    "quantity": { "items": [{ "quantity": 5, "unitAmount": 1000 }] },
+    "decimalUnitAmount": { "items": [{ "quantity": 1000, "unitAmount": 0.5 }] },
+    "transformQuantity": {
+      "items": [{ "quantity": 11, "unitAmount": 1000, "transformQuantity": { "divideBy": 5, "round": "up" } }]
+    },
+    "percentCoupon": {
+      "items": [{ "unitAmount": 10000 }],
+      "discounts": [
+        { "percentOff": 20, "amountOff": null, "currency": null, "duration": "forever", "start": "2026-01-10T12:00:00.000Z", "end": null }
+      ]
+    },
+    "amountCoupon": {
+      "items": [{ "unitAmount": 5000 }],
+      "discounts": [
+        { "percentOff": null, "amountOff": 1000, "currency": "usd", "duration": "repeating", "start": "2026-01-10T12:00:00.000Z", "end": "2027-01-10T12:00:00.000Z" }
+      ]
+    },
+    "amountCouponAnnual": {
+      "items": [{ "interval": "year", "unitAmount": 120000 }],
+      "discounts": [
+        { "percentOff": null, "amountOff": 24000, "currency": "usd", "duration": "forever", "start": "2026-01-10T12:00:00.000Z", "end": null }
+      ]
+    },
+    "expiredCoupon": {
+      "items": [{ "unitAmount": 5000 }],
+      "discounts": [
+        { "percentOff": 50, "amountOff": null, "currency": null, "duration": "repeating", "start": "2026-01-10T12:00:00.000Z", "end": "2026-04-10T12:00:00.000Z" }
+      ]
+    },
+    "onceCoupon": {
+      "items": [{ "unitAmount": 5000 }],
+      "discounts": [
+        { "percentOff": 100, "amountOff": null, "currency": null, "duration": "once", "start": "2026-10-01T12:00:00.000Z", "end": null }
+      ]
+    },
+    "wrongCurrencyCoupon": {
+      "items": [{ "unitAmount": 5000 }],
+      "discounts": [
+        { "percentOff": null, "amountOff": 1000, "currency": "eur", "duration": "forever", "start": "2026-01-10T12:00:00.000Z", "end": null }
+      ]
+    },
+    "itemLevelCoupon": {
+      "items": [
+        {
+          "unitAmount": 4000,
+          "discounts": [
+            { "percentOff": 25, "amountOff": null, "currency": null, "duration": "forever", "start": "2026-01-10T12:00:00.000Z", "end": null }
+          ]
+        },
+        { "id": "si_addon", "unitAmount": 1000 }
+      ],
+      "discounts": [
+        { "percentOff": null, "amountOff": 500, "currency": "usd", "duration": "forever", "start": "2026-01-10T12:00:00.000Z", "end": null }
+      ]
+    },
+    "trialing": {
+      "status": "trialing",
+      "trialStart": "2026-10-15T00:00:00.000Z",
+      "trialEnd": "2026-10-29T00:00:00.000Z",
+      "items": [{}]
+    },
+    "pastDue": { "status": "past_due", "items": [{ "unitAmount": 4900 }] },
+    "cancelAtPeriodEnd": { "cancelAtPeriodEnd": true, "items": [{ "unitAmount": 1900 }] },
+    "canceled": {
+      "status": "canceled",
+      "canceledAt": "2026-06-01T00:00:00.000Z",
+      "endedAt": "2026-06-01T00:00:00.000Z",
+      "items": [{ "unitAmount": 9900 }]
+    },
+    "incomplete": { "status": "incomplete", "items": [{ "unitAmount": 9900 }] },
+    "unpaid": { "status": "unpaid", "items": [{ "unitAmount": 9900 }] },
+    "paused": { "status": "paused", "items": [{ "unitAmount": 9900 }] },
+    "brl": { "currency": "brl", "items": [{ "unitAmount": 10000 }] },
+    "eurAnnual": { "currency": "eur", "items": [{ "interval": "year", "unitAmount": 60000 }] },
+    "jpy": { "currency": "jpy", "items": [{ "unitAmount": 1500 }] },
+    "graduated": {
+      "items": [
+        {
+          "quantity": 15,
+          "billingScheme": "tiered",
+          "unitAmount": null,
+          "tiersMode": "graduated",
+          "tiers": [
+            { "upTo": 10, "unitAmount": 500, "flatAmount": 1000 },
+            { "upTo": null, "unitAmount": 300, "flatAmount": 0 }
+          ]
+        }
+      ]
+    },
+    "volume": {
+      "items": [
+        {
+          "quantity": 15,
+          "billingScheme": "tiered",
+          "unitAmount": null,
+          "tiersMode": "volume",
+          "tiers": [
+            { "upTo": 10, "unitAmount": 500, "flatAmount": 0 },
+            { "upTo": null, "unitAmount": 300, "flatAmount": 2000 }
+          ]
+        }
+      ]
+    },
+    "withMetered": {
+      "items": [
+        { "unitAmount": 2000 },
+        { "id": "si_usage", "usageType": "metered", "unitAmount": 5 }
+      ]
+    },
+    "onlyMetered": {
+      "items": [{ "usageType": "metered", "unitAmount": 5 }]
+    }
+  }
+}

@@ -12,6 +12,8 @@ export type StartupSummary = {
   tagline: string | null;
   logoUrl: string | null;
   isVerified: boolean;
+  verifiedAt: string | null;
+  verifiedProviders: string[];
   model: { slug: string; name: string };
   niche: { slug: string; name: string } | null;
   mrrCents: number | null;
@@ -29,6 +31,8 @@ function toSummary(row: Tables<"startup_directory">): StartupSummary {
     tagline: row.tagline,
     logoUrl: row.logo_url,
     isVerified: row.is_verified ?? false,
+    verifiedAt: row.verified_at,
+    verifiedProviders: row.verified_providers ?? [],
     model: { slug: row.business_model_slug!, name: row.business_model_name! },
     niche: row.niche_slug ? { slug: row.niche_slug, name: row.niche_name! } : null,
     mrrCents: row.mrr_cents,
@@ -118,7 +122,9 @@ export async function getPublicStartup(slug: string) {
       .maybeSingle(),
     supabase
       .from("startup_directory")
-      .select("mrr_cents, revenue_total_cents, growth_30d_pct, revenue_as_of")
+      .select(
+        "mrr_cents, revenue_total_cents, growth_30d_pct, revenue_as_of, active_subscriptions, revenue_is_estimated, verified_at, verified_providers"
+      )
       .eq("slug", slug)
       .maybeSingle(),
   ]);
@@ -136,5 +142,8 @@ export async function getPublicStartup(slug: string) {
     revenueTotalCents: metrics?.revenue_total_cents ?? null,
     growth30dPct: metrics?.growth_30d_pct ?? null,
     revenueAsOf: metrics?.revenue_as_of ?? null,
+    activeSubscriptions: metrics?.active_subscriptions ?? null,
+    verifiedAt: metrics?.verified_at ?? null,
+    verifiedProviders: metrics?.verified_providers ?? [],
   };
 }

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BadgeCheckIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StartupLogo } from "@/components/startup-logo";
+import { VerifiedBadge } from "@/components/verified-badge";
 import { getPublicStartup, getPublishedSlugs } from "@/lib/data/startups";
-import { formatPercent, formatUsd } from "@/lib/format";
+import { formatDateTimeUtc, formatPercent, formatUsd } from "@/lib/format";
 
 export async function generateStaticParams() {
   const slugs = await getPublishedSlugs();
@@ -36,10 +37,7 @@ export default async function StartupPage({ params }: PageProps<"/startup/[slug]
           <h1 className="flex flex-wrap items-center gap-2 text-3xl font-semibold tracking-tight">
             {startup.name}
             {startup.is_verified && (
-              <Badge className="bg-emerald-600 text-white dark:bg-emerald-500">
-                <BadgeCheckIcon data-icon="inline-start" aria-hidden="true" />
-                Verified
-              </Badge>
+              <VerifiedBadge providers={startup.verifiedProviders} verifiedAt={startup.verifiedAt} />
             )}
           </h1>
           {startup.tagline && <p className="mt-1 text-lg text-muted-foreground">{startup.tagline}</p>}
@@ -80,22 +78,26 @@ export default async function StartupPage({ params }: PageProps<"/startup/[slug]
         <h2 id="revenue-heading" className="text-lg font-semibold">
           Revenue
         </h2>
-        {startup.mrrCents !== null ? (
-          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Metric label="MRR" value={formatUsd(startup.mrrCents)} />
-            <Metric label="Total revenue" value={formatUsd(startup.revenueTotalCents ?? 0)} />
-            <Metric
-              label="Last 30 days"
-              value={startup.growth30dPct !== null ? formatPercent(startup.growth30dPct) : "—"}
-            />
-          </dl>
+        {/* Only verified revenue is shown publicly; history stays private once a connection lapses. */}
+        {startup.is_verified && startup.mrrCents !== null ? (
+          <>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+              <Metric label="MRR" value={formatUsd(startup.mrrCents)} />
+              <Metric label="Total revenue" value={formatUsd(startup.revenueTotalCents ?? 0)} />
+              <Metric
+                label="30-day growth"
+                value={startup.growth30dPct !== null ? formatPercent(startup.growth30dPct) : "—"}
+              />
+            </dl>
+            <p className="mt-2 text-xs text-muted-foreground">
+              In USD.{" "}
+              {startup.verifiedAt && <>Last updated {formatDateTimeUtc(startup.verifiedAt)}.</>}
+            </p>
+          </>
         ) : (
           <p className="mt-3 rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Not verified yet. Revenue appears once the founder connects a payment provider.
+            Revenue not verified. Numbers appear once the founder connects a payment provider.
           </p>
-        )}
-        {startup.revenueAsOf && (
-          <p className="mt-2 text-xs text-muted-foreground">As of {startup.revenueAsOf}.</p>
         )}
       </section>
 
