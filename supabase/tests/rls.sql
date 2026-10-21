@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(16);
+select plan(18);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the table owner, so RLS does not apply)
@@ -23,7 +23,9 @@ values
   ('00000000-0000-4000-b000-000000000001', 'rls-alice-draft', 'Alice Draft', 'https://draft.test',
    (select id from public.business_models where slug = 'micro-saas'), 'draft', '00000000-0000-4000-a000-00000000000a'),
   ('00000000-0000-4000-b000-000000000002', 'rls-alice-live', 'Alice Live', 'https://live.test',
-   (select id from public.business_models where slug = 'saas'), 'published', '00000000-0000-4000-a000-00000000000a');
+   (select id from public.business_models where slug = 'saas'), 'published', '00000000-0000-4000-a000-00000000000a'),
+  ('00000000-0000-4000-b000-000000000003', 'rls-alice-hidden', 'Alice Hidden', 'https://hidden.test',
+   (select id from public.business_models where slug = 'saas'), 'hidden', '00000000-0000-4000-a000-00000000000a');
 
 insert into public.revenue_connections (startup_id, provider, encrypted_credentials)
 values ('00000000-0000-4000-b000-000000000002', 'stripe', 'ciphertext');
@@ -167,6 +169,21 @@ select is(
     where s.id = '00000000-0000-4000-b000-000000000001'),
   'aaas',
   'founder edits the declared model and the effective model follows while pending'
+);
+
+select throws_ok(
+  $$ update public.startups set status = 'hidden' where id = '00000000-0000-4000-b000-000000000001' $$,
+  '42501',
+  null,
+  'a client cannot hide a startup'
+);
+
+update public.startups set status = 'published' where id = '00000000-0000-4000-b000-000000000003';
+
+select is(
+  (select status::text from public.startups where id = '00000000-0000-4000-b000-000000000003'),
+  'hidden',
+  'a client cannot unhide a moderated startup'
 );
 
 select * from finish();
