@@ -1,6 +1,8 @@
 import "server-only";
 import Stripe from "stripe";
 import { redactedMessage } from "@/lib/crypto/redact";
+import { classifyProviderKey } from "../provider-config";
+import { allowProviderTestKeys } from "../test-keys";
 import type {
   NormalizedDiscount,
   NormalizedSubscription,
@@ -10,7 +12,6 @@ import type {
   ValidationResult,
 } from "../types";
 import {
-  classifyStripeKey,
   mapBalanceTransaction,
   mapCoupon,
   mapItem,
@@ -31,7 +32,7 @@ export function createStripeClient(key: string) {
 }
 
 export function allowTestKeys() {
-  return process.env.ALLOW_STRIPE_TEST_KEYS === "true";
+  return allowProviderTestKeys("stripe");
 }
 
 type StripeErrorLike = { type?: string; statusCode?: number; message?: string };
@@ -58,7 +59,7 @@ const PROBES: Record<string, (stripe: Stripe) => Promise<unknown>> = {
 };
 
 async function validateCredentials(rawKey: string): Promise<ValidationResult> {
-  const check = classifyStripeKey(rawKey, allowTestKeys());
+  const check = classifyProviderKey("stripe", rawKey, allowTestKeys());
   if (!check.ok) return check;
 
   const stripe = createStripeClient(rawKey.trim());

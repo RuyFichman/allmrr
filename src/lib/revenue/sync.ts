@@ -8,11 +8,10 @@ import type { Json } from "@/lib/supabase/database.types";
 import { addDays, toDay } from "./dates";
 import { ensureFxRates, loadFxTable, refreshTrackedFxRates } from "./fx-sync";
 import { MissingFxRateError } from "./fx";
-import { isAuthenticationError, isPermissionError, stripeProvider } from "./providers/stripe";
+import { isAuthenticationError, isPermissionError } from "./providers/stripe";
+import { getRevenueProvider } from "./provider-registry";
 import { buildDailySnapshots, mergeWithExisting } from "./snapshots";
-import type { DailySnapshot, NormalizedSubscription, NormalizedTransaction, RevenueProvider } from "./types";
-
-const PROVIDERS: Partial<Record<string, RevenueProvider>> = { stripe: stripeProvider };
+import type { DailySnapshot, NormalizedSubscription, NormalizedTransaction } from "./types";
 
 // Only the last 24 months of MRR are reconstructed; revenue totals still include everything.
 const BACKFILL_DAYS = 730;
@@ -156,7 +155,7 @@ export async function syncConnection(connectionId: string, trigger: SyncTrigger)
 
   const stats: Record<string, number> = {};
   try {
-    const provider = PROVIDERS[connection.provider];
+    const provider = getRevenueProvider(connection.provider);
     if (!provider) throw new SyncFailure(`Provider ${connection.provider} is not supported yet.`, "permission");
     if (!connection.encrypted_credentials) throw new SyncFailure("This connection was disconnected.", "revoked");
 
