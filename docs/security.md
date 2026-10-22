@@ -11,6 +11,37 @@ payment provider. This page describes how those keys are handled.
   want write access to a founder's account.
 - Keys are validated with read-only `list` calls (`limit: 1`). We never probe write endpoints.
 
+## Sprint 3: Lemon Squeezy deferred
+
+Research on 2026-10-22 found no documented read-only scopes or scoped OAuth flow in the official
+[key creation guide](https://docs.lemonsqueezy.com/guides/developer-guide/getting-started)
+and [authentication reference](https://docs.lemonsqueezy.com/api/getting-started/requests).
+The API also allows subscription cancellation with a Bearer key. Restricting our HTTP helper to
+GET would limit our code, not the credential's authority if stolen. We do not accept, store or
+request these keys while this requirement is unresolved. Test mode isolates test data but does not
+make a credential read-only. The owner approved deferral on 2026-10-22. Confirm a supported
+restricted credential before revisiting the integration; never validate access with write probes.
+
+## Sprint 3: Polar research, adapter not enabled
+
+Polar supports [scoped Organization Access Tokens](https://polar.sh/docs/integrate/oat).
+Use only the minimum read scopes for the approved data source, never `:write` scopes. The candidate
+public API scopes and read probes are recorded in `docs/revenue-methodology.md`; they are not yet
+implemented. A successful GET proves read access but cannot establish that a token has no additional
+write permissions. Do not use private token-management endpoints or mutation probes to check this.
+
+OATs use Bearer authentication and the `polar_oat_` prefix. This prefix does not distinguish live
+from sandbox; the API hosts and credentials are isolated. Any future adapter must explicitly
+validate the selected environment and gate sandbox with `ALLOW_POLAR_TEST_KEYS=true`. Redact the
+whole OAT, encrypt it with the connection ID as AAD, and never retain raw provider errors.
+
+No token has been requested, stored or used. Implementation is pending the owner's decision about
+historical data accuracy: the financial ledger routes found in Polar's official source are marked
+private. Do not silently depend on them or substitute mutable order timestamps for financial events.
+Their authentication also permits user subjects only, not OATs. Investigating a user-authorized
+OAuth integration requires separate client registration and confirmation of supported ledger access;
+extra OAT scopes or full-access credentials are not a workaround.
+
 ## Encryption at rest
 
 - Algorithm: AES-256-GCM (`node:crypto`), implemented in `src/lib/crypto/secrets.ts`.
