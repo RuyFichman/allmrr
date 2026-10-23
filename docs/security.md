@@ -22,7 +22,7 @@ request these keys while this requirement is unresolved. Test mode isolates test
 make a credential read-only. The owner approved deferral on 2026-10-22. Confirm a supported
 restricted credential before revisiting the integration; never validate access with write probes.
 
-## Sprint 3: Polar research, adapter not enabled
+## Sprint 3: Polar deferred
 
 Polar supports [scoped Organization Access Tokens](https://polar.sh/docs/integrate/oat).
 Use only the minimum read scopes for the approved data source, never `:write` scopes. The candidate
@@ -35,12 +35,35 @@ from sandbox; the API hosts and credentials are isolated. Any future adapter mus
 validate the selected environment and gate sandbox with `ALLOW_POLAR_TEST_KEYS=true`. Redact the
 whole OAT, encrypt it with the connection ID as AAD, and never retain raw provider errors.
 
-No token has been requested, stored or used. Implementation is pending the owner's decision about
-historical data accuracy: the financial ledger routes found in Polar's official source are marked
+No token has been requested, stored or used. The owner deferred implementation on 2026-10-22 to
+preserve historical data accuracy: the financial ledger routes found in Polar's official source are marked
 private. Do not silently depend on them or substitute mutable order timestamps for financial events.
 Their authentication also permits user subjects only, not OATs. Investigating a user-authorized
 OAuth integration requires separate client registration and confirmation of supported ledger access;
 extra OAT scopes or full-access credentials are not a workaround.
+
+## Sprint 3: Paddle, RevenueCat and Gumroad deferred
+
+The owner deferred these adapters on 2026-10-22 to preserve exact historical revenue. None is
+registered or accepts credentials. Research and the remaining data limitations are recorded in
+`docs/revenue-methodology.md`; no keys were requested or retained.
+
+- Paddle: modern scoped Bearer keys only; legacy keys are not restricted. Candidate grants are
+  `subscription.read`, `transaction.read`, `adjustment.read`, `discount.read`. GET `/` can verify
+  account, environment and granted scopes. Reject write grants. `report.read` cannot generate
+  reports; do not add `report.write` to work around history gaps. The owner declined a separate
+  dashboard-report workflow.
+- RevenueCat: V2 secret keys with only the documented `:read` permissions for projects, customers,
+  subscriptions and purchases. Reject V1/public SDK keys and `:read_write` grants. Select and
+  validate sandbox explicitly; keys do not themselves isolate the environment.
+- Gumroad: scoped OAuth with `view_profile`, `view_sales`, `view_payouts` is the candidate access
+  model. Do not accept the broad `account` scope or mutation grants. Avoid token query parameters,
+  email-producing exports and write probes. No financial sandbox credential scheme was confirmed.
+
+Before enabling any adapter, add its credential patterns and exact-token redaction tests. Opaque
+tokens require exact-token redaction, not just a guessed prefix. Raw responses and native error
+messages must not escape the server-only adapter. Keep encryption/AAD and founder authorization
+identical to the existing connection workflow.
 
 ## Encryption at rest
 
