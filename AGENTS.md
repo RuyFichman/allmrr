@@ -246,12 +246,23 @@ Other payment providers (Sprint 3), charts and OG images (Sprint 4), leaderboard
 (Sprint 5), marketplace (Sprint 6), billing (Sprint 7), admin and fraud heuristics (Sprint 8),
 email notifications.
 
-## Notes for Sprint 3
+## Sprint 3 conventions and pending validation
 
-- When there are several providers, the startup rollup (`public.refresh_startup_revenue`) should sum
-  only the days on which **all** of the startup's connections have data. Today it sums whatever
-  rows exist per day, so a connection with a shorter history makes earlier totals drop.
-- Support Stripe `currency_options` (multi-currency prices): items whose price currency differs from
-  the subscription currency are only counted in `sync_runs.stats.currencyMismatchItems` today.
-- Notify the founder when a connection fails several times in a row (`consecutive_failures`), before
-  the 72-hour window removes the Verified badge.
+- The provider registry is the source of enabled adapters. All five proposed additional providers
+  are deferred by the owner; see the official research and blockers in the methodology/security docs.
+  Do not enable them or request credentials until read-only access and exact revenue history are resolved.
+- New adapters split network, pure mapping and permission definitions. Use the shared server-only
+  HTTP helper with bounded retries, Retry-After, deadlines and fixed credential-free errors.
+- Stripe reads share the sync deadline, including pagination. Rate limits defer a run without
+  incrementing hard failures; persisted retry times apply to manual and cron syncs.
+- Alert after two consecutive hard failures (roughly 48 hours with daily cron), or immediately
+  for revoked credentials/missing permissions. Reconnecting a known account preserves snapshots;
+  never mix history when the original account identity cannot be established.
+- Resolve Stripe prices/tiers in the subscription currency through `currency_options`; do not
+  substitute the default amount when the requested option is unavailable.
+- The prepared rollup migration includes only dates present for every non-disconnected connection,
+  including accounts needing attention. Disconnect retains individual snapshots.
+- Dev migration application is owner-approved but pending the Supabase MCP. Run advisors, regenerate
+  types, match the remote migration version and execute the 38 RLS assertions before declaring it done.
+- The current schema/UI still supports one connection per provider per startup. The full multi-account
+  UI and new-provider sandbox acceptance remain pending; do not claim Sprint 3 acceptance is complete.

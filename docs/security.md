@@ -108,6 +108,22 @@ identical to the existing connection workflow.
 Connect attempts (5 per hour) and manual syncs (1 per 10 minutes) are counted per user and startup
 in `private.rate_limit_events`, through the service-role-only `consume_rate_limit` function.
 
+## Failure handling and reconnects
+
+Provider authentication and permission failures produce fixed, credential-free messages. Revoked
+keys require attention immediately; two consecutive hard failures trigger the dashboard alert.
+Rate limits do not increment that counter. Their retry time is persisted and respected by manual
+and cron syncs, with bounded jittered retries inside the execution deadline. There are no emails.
+
+Rotating a key for the same known Stripe account retains its historical snapshots. A different
+account, a missing account ID on the new key, or an unknown original identity is rejected rather
+than combining financial histories. Enable Core → Accounts: Read when reconnecting. Existing
+connections without a recorded account identity need an identity recovery workflow before rotation.
+
+Local UI checks cover the alert, reconnect form, accessible authorization error and two-step
+disconnect at 375px. Authenticated dev integration checks remain pending Supabase access; these
+local checks do not establish provider sandbox acceptance.
+
 ## Rotating the encryption key
 
 Ciphertexts carry their key version, so old and new keys can coexist during a rotation.

@@ -40,6 +40,15 @@ MRR is the recurring revenue a startup earns per month from its active subscript
 6. Each subscription is converted to USD with the latest daily exchange rate, and the total is
    rounded to the cent only at the very end.
 
+Stripe multi-currency prices use the subscription currency's `currency_options` amount or tiers,
+including decimal and flat tier amounts. The default currency is never substituted. Missing
+options stop the sync and preserve earlier snapshots. Discounts resolve in the same currency.
+
+For multiple connected accounts, startup totals use only dates present for every connection that
+has not been explicitly disconnected. Accounts needing attention remain in this set, preventing
+failed syncs from silently lowering totals. Each account's all-time total still includes revenue
+before the first common day. MRR/growth use complete days; disconnect retains individual history.
+
 ## Total revenue
 
 Total revenue is the all-time sum of money actually received:
@@ -77,6 +86,16 @@ On weekends and holidays we use the most recent previous rate.
 A startup is verified while at least one connected payment account synced successfully in the last
 72 hours. Data syncs automatically every day. If a key is revoked, a sync keeps failing, or the
 founder disconnects, the badge disappears, and its revenue stops being shown publicly.
+
+The dashboard warns after two consecutive hard failures, approximately 48 hours into a daily
+sync outage, and immediately for revoked keys or missing permissions. Rate-limited runs are
+deferred without increasing the failure count; they retry no earlier than the provider's
+Retry-After time, on a later manual or daily sync. Existing snapshots are not deleted.
+
+Implementation status: the common-day rollup migration is prepared and approved for dev, but
+remote application, advisors, generated types and the 38-assertion RLS run await the Supabase MCP.
+The current schema and UI allow one account per provider per startup. All five additional
+providers and their sandbox acceptance checks are deferred by the owner for the reasons below.
 
 ## What we never do
 
