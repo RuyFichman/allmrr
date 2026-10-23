@@ -98,6 +98,8 @@ export type ValidationResult =
 
 export type ProviderContext = {
   credentials: string;
+  // Shared by every page/request in a sync, including retries.
+  deadline?: number;
   // Counters the adapter increments (skipped items, unresolved coupons…), stored in sync_runs.
   stats: Record<string, number>;
 };

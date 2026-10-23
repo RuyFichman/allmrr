@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(26);
+select plan(38);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the table owner, so RLS does not apply)
@@ -252,6 +252,81 @@ select is(
   'a client cannot unhide a moderated startup'
 );
 
+select throws_ok(
+  $$ select public.refresh_startup_revenue('00000000-0000-4000-b000-000000000002') $$,
+  '42501', null, 'founders cannot rebuild rollups directly'
+);
+
+reset role;
+set local role anon;
+select throws_ok(
+  $$ select public.refresh_startup_revenue('00000000-0000-4000-b000-000000000002') $$,
+  '42501', null, 'anonymous callers cannot rebuild rollups'
+);
+
+reset role;
+set local role service_role;
+
+insert into public.revenue_connections (id, startup_id, provider, encrypted_credentials, external_account_id)
+values ('00000000-0000-4000-c000-000000000003', '00000000-0000-4000-b000-000000000002',
+  'paddle', 'fixture-only', 'rls-paddle-account');
+
+select throws_ok(
+  $$ insert into public.revenue_connections (startup_id, provider, encrypted_credentials, external_account_id)
+     values ('00000000-0000-4000-b000-000000000001', 'paddle', 'fixture-only', 'rls-paddle-account') $$,
+  '23505', null, 'a provider account cannot verify two startups'
+);
+
+update public.revenue_connections set last_success_at = now()
+where id = '00000000-0000-4000-c000-000000000001';
+
+insert into public.connection_revenue_snapshots
+  (connection_id, date, mrr_cents, revenue_cents, revenue_total_cents, active_subscriptions, is_estimated)
+values
+  ('00000000-0000-4000-c000-000000000001', current_date - 31, 500, 100, 1000, 1, true),
+  ('00000000-0000-4000-c000-000000000001', current_date - 30, 500, 100, 1100, 1, false),
+  ('00000000-0000-4000-c000-000000000003', current_date - 30, 1500, 200, 2200, 2, true),
+  ('00000000-0000-4000-c000-000000000003', current_date, 2000, 300, 7000, 2, false);
+
+select public.refresh_startup_revenue('00000000-0000-4000-b000-000000000002');
+select is((select count(*)::int from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002'), 2,
+  'shorter connection history excludes incomplete days');
+-- Hand calculation: current MRR 1000 + 2000; all-time revenue 5000 + 7000.
+select is((select mrr_cents from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002' and date = current_date),
+  3000::bigint, 'complete-day MRR sums both accounts');
+select is((select revenue_total_cents from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002' and date = current_date),
+  12000::bigint, 'all-time totals include each account full history');
+select ok((select is_estimated from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002' and date = current_date - 30),
+  'one estimated component makes the combined day estimated');
+-- Hand calculation: (3000 - (500 + 1500)) / 2000 * 100 = 50%.
+select is((select growth_30d_pct from public.startup_directory where slug = 'rls-alice-live'),
+  50.0::numeric, 'public growth compares complete rollups');
+
+update public.revenue_connections set status = 'error'
+where id = '00000000-0000-4000-c000-000000000003';
+select public.refresh_startup_revenue('00000000-0000-4000-b000-000000000002');
+select is((select mrr_cents from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002' and date = current_date),
+  3000::bigint, 'a failing connection does not disappear from totals');
+select ok((select is_verified from public.startups
+  where id = '00000000-0000-4000-b000-000000000002'),
+  'one recent active connection still verifies the startup');
+
+update public.revenue_connections set encrypted_credentials = null, disconnected_at = now(), status = 'revoked'
+where id = '00000000-0000-4000-c000-000000000003';
+select public.refresh_startup_revenue('00000000-0000-4000-b000-000000000002');
+select is((select mrr_cents from public.revenue_snapshots
+  where startup_id = '00000000-0000-4000-b000-000000000002' and date = current_date),
+  1000::bigint, 'explicit disconnect removes the account from totals');
+select is((select count(*)::int from public.connection_revenue_snapshots
+  where connection_id = '00000000-0000-4000-c000-000000000003'),
+  2, 'disconnect and rollup preserve connection snapshots');
+
+reset role;
 select * from finish();
 
 rollback;

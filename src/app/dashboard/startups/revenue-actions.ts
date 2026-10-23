@@ -91,7 +91,7 @@ export async function connectStripe(
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("revenue_connections")
-    .select("id")
+    .select("id, external_account_id")
     .eq("startup_id", startupId)
     .eq("provider", "stripe")
     .maybeSingle();
@@ -112,8 +112,13 @@ export async function connectStripe(
   const connectionId = existing?.id ?? randomUUID();
   const { ciphertext, keyVersion } = encryptSecret(key, connectionId);
 
-  // A new key may point at another account: start its history from scratch.
-  if (existing) await admin.from("connection_revenue_snapshots").delete().eq("connection_id", connectionId);
+  // A rotation for the same account must preserve observed MRR and financial history.
+  if (existing && !existing.external_account_id) {
+    return { error: "The original Stripe account identity is unknown. Contact support before reconnecting so historical revenue is not mixed between accounts." };
+  }
+  if (existing && (!validation.accountId || existing.external_account_id !== validation.accountId)) {
+    return { error: "Reconnect the original Stripe account with Core → Accounts: Read enabled." };
+  }
 
   const { error } = await admin.from("revenue_connections").upsert({
     id: connectionId,
@@ -196,7 +201,7 @@ export async function disconnectStripe(startupId: string): Promise<RevenueAction
   if (error) return { error: "We couldn't disconnect Stripe. Please try again." };
   if (!data.length) return { error: "Stripe is not connected." };
 
-  await admin.rpc("refresh_verification", { p_startup_id: startupId });
+  await admin.rpc("refresh_startup_revenue", { p_startup_id: startupId });
   updateTag(TAGS.startups);
   updateTag(TAGS.startup(founder.slug));
   return { ok: true, message: "Stripe disconnected. Your stored key was deleted." };

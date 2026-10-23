@@ -11,6 +11,60 @@ payment provider. This page describes how those keys are handled.
   want write access to a founder's account.
 - Keys are validated with read-only `list` calls (`limit: 1`). We never probe write endpoints.
 
+## Sprint 3: Lemon Squeezy deferred
+
+Research on 2026-10-22 found no documented read-only scopes or scoped OAuth flow in the official
+[key creation guide](https://docs.lemonsqueezy.com/guides/developer-guide/getting-started)
+and [authentication reference](https://docs.lemonsqueezy.com/api/getting-started/requests).
+The API also allows subscription cancellation with a Bearer key. Restricting our HTTP helper to
+GET would limit our code, not the credential's authority if stolen. We do not accept, store or
+request these keys while this requirement is unresolved. Test mode isolates test data but does not
+make a credential read-only. The owner approved deferral on 2026-10-22. Confirm a supported
+restricted credential before revisiting the integration; never validate access with write probes.
+
+## Sprint 3: Polar deferred
+
+Polar supports [scoped Organization Access Tokens](https://polar.sh/docs/integrate/oat).
+Use only the minimum read scopes for the approved data source, never `:write` scopes. The candidate
+public API scopes and read probes are recorded in `docs/revenue-methodology.md`; they are not yet
+implemented. A successful GET proves read access but cannot establish that a token has no additional
+write permissions. Do not use private token-management endpoints or mutation probes to check this.
+
+OATs use Bearer authentication and the `polar_oat_` prefix. This prefix does not distinguish live
+from sandbox; the API hosts and credentials are isolated. Any future adapter must explicitly
+validate the selected environment and gate sandbox with `ALLOW_POLAR_TEST_KEYS=true`. Redact the
+whole OAT, encrypt it with the connection ID as AAD, and never retain raw provider errors.
+
+No token has been requested, stored or used. The owner deferred implementation on 2026-10-22 to
+preserve historical data accuracy: the financial ledger routes found in Polar's official source are marked
+private. Do not silently depend on them or substitute mutable order timestamps for financial events.
+Their authentication also permits user subjects only, not OATs. Investigating a user-authorized
+OAuth integration requires separate client registration and confirmation of supported ledger access;
+extra OAT scopes or full-access credentials are not a workaround.
+
+## Sprint 3: Paddle, RevenueCat and Gumroad deferred
+
+The owner deferred these adapters on 2026-10-22 to preserve exact historical revenue. None is
+registered or accepts credentials. Research and the remaining data limitations are recorded in
+`docs/revenue-methodology.md`; no keys were requested or retained.
+
+- Paddle: modern scoped Bearer keys only; legacy keys are not restricted. Candidate grants are
+  `subscription.read`, `transaction.read`, `adjustment.read`, `discount.read`. GET `/` can verify
+  account, environment and granted scopes. Reject write grants. `report.read` cannot generate
+  reports; do not add `report.write` to work around history gaps. The owner declined a separate
+  dashboard-report workflow.
+- RevenueCat: V2 secret keys with only the documented `:read` permissions for projects, customers,
+  subscriptions and purchases. Reject V1/public SDK keys and `:read_write` grants. Select and
+  validate sandbox explicitly; keys do not themselves isolate the environment.
+- Gumroad: scoped OAuth with `view_profile`, `view_sales`, `view_payouts` is the candidate access
+  model. Do not accept the broad `account` scope or mutation grants. Avoid token query parameters,
+  email-producing exports and write probes. No financial sandbox credential scheme was confirmed.
+
+Before enabling any adapter, add its credential patterns and exact-token redaction tests. Opaque
+tokens require exact-token redaction, not just a guessed prefix. Raw responses and native error
+messages must not escape the server-only adapter. Keep encryption/AAD and founder authorization
+identical to the existing connection workflow.
+
 ## Encryption at rest
 
 - Algorithm: AES-256-GCM (`node:crypto`), implemented in `src/lib/crypto/secrets.ts`.
@@ -53,6 +107,22 @@ payment provider. This page describes how those keys are handled.
 
 Connect attempts (5 per hour) and manual syncs (1 per 10 minutes) are counted per user and startup
 in `private.rate_limit_events`, through the service-role-only `consume_rate_limit` function.
+
+## Failure handling and reconnects
+
+Provider authentication and permission failures produce fixed, credential-free messages. Revoked
+keys require attention immediately; two consecutive hard failures trigger the dashboard alert.
+Rate limits do not increment that counter. Their retry time is persisted and respected by manual
+and cron syncs, with bounded jittered retries inside the execution deadline. There are no emails.
+
+Rotating a key for the same known Stripe account retains its historical snapshots. A different
+account, a missing account ID on the new key, or an unknown original identity is rejected rather
+than combining financial histories. Enable Core → Accounts: Read when reconnecting. Existing
+connections without a recorded account identity need an identity recovery workflow before rotation.
+
+Local UI checks cover the alert, reconnect form, accessible authorization error and two-step
+disconnect at 375px. Authenticated dev integration checks remain pending Supabase access; these
+local checks do not establish provider sandbox acceptance.
 
 ## Rotating the encryption key
 

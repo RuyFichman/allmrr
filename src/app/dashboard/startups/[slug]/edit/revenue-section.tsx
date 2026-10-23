@@ -11,7 +11,7 @@ export async function RevenueSection({ startupId }: { startupId: string }) {
   const { data: connection } = await supabase
     .from("revenue_connections")
     .select(
-      "id, provider, status, key_last4, external_account_id, last_sync_started_at, last_synced_at, last_success_at, last_error, disconnected_at, created_at"
+      "id, provider, status, key_last4, external_account_id, last_sync_started_at, last_synced_at, last_success_at, last_error, consecutive_failures, disconnected_at, created_at"
     )
     .eq("startup_id", startupId)
     .eq("provider", "stripe")
@@ -26,7 +26,6 @@ export async function RevenueSection({ startupId }: { startupId: string }) {
           .from("sync_runs")
           .select("status, trigger, started_at, finished_at, stats, error")
           .eq("connection_id", live.id)
-          .neq("status", "skipped")
           .order("started_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -52,6 +51,7 @@ export async function RevenueSection({ startupId }: { startupId: string }) {
           (live.last_synced_at === null || Date.parse(live.last_synced_at) < Date.parse(live.last_sync_started_at)),
         lastSuccessAt: live.last_success_at,
         lastError: live.last_error,
+        consecutiveFailures: live.consecutive_failures,
         connectedAt: live.created_at,
         run: runResult?.data
           ? {
@@ -87,7 +87,7 @@ export async function RevenueSection({ startupId }: { startupId: string }) {
         </p>
       </div>
       {view ? (
-        <ConnectionPanel startupId={startupId} connection={view} />
+        <ConnectionPanel startupId={startupId} connection={view} testMode={process.env.ALLOW_STRIPE_TEST_KEYS === "true"} />
       ) : (
         <ConnectStripeForm
           startupId={startupId}

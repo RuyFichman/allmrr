@@ -2,15 +2,18 @@ import "server-only";
 import type { AdminClient } from "@/lib/supabase/admin";
 import { addDays } from "./dates";
 import { buildFxTable } from "./fx";
+import { SyncFailure } from "./failures";
 
 // Frankfurter publishes ECB reference rates: free, keyless, business days only.
 const FRANKFURTER_URL = "https://api.frankfurter.dev/v1";
 
 type FrankfurterRange = { rates: Record<string, Record<string, number>> };
 
-async function fetchRange(from: string, to: string, currencies: string[]) {
+async function fetchRange(from: string, to: string, currencies: string[], deadline?: number) {
+  const remaining = deadline === undefined ? 15_000 : deadline - Date.now();
+  if (remaining <= 0) throw new SyncFailure("The sync time budget was reached. It will be retried later.", "deferred", 60_000);
   const url = `${FRANKFURTER_URL}/${from}..${to}?base=USD&symbols=${currencies.join(",")}`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
+  const response = await fetch(url, { signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, remaining))), cache: "no-store" });
   if (!response.ok) throw new Error(`FX provider returned ${response.status} for ${currencies.join(",")}.`);
   const body = (await response.json()) as FrankfurterRange;
 
@@ -28,7 +31,7 @@ async function fetchRange(from: string, to: string, currencies: string[]) {
 
 // Makes sure fx_rates covers [from, to] for each currency, fetching only what is missing.
 // A 7-day pad before `from` lets weekends and holidays fall back to the previous rate.
-export async function ensureFxRates(admin: AdminClient, currencies: Iterable<string>, from: string, to: string) {
+export async function ensureFxRates(admin: AdminClient, currencies: Iterable<string>, from: string, to: string, deadline?: number) {
   const needed = [...new Set([...currencies].map((c) => c.toUpperCase()))].filter((c) => c !== "USD").sort();
   if (needed.length === 0) return;
   const paddedFrom = addDays(from, -7);
@@ -49,7 +52,7 @@ export async function ensureFxRates(admin: AdminClient, currencies: Iterable<str
   });
   if (stale.length === 0) return;
 
-  const rows = await fetchRange(paddedFrom, to, stale);
+  const rows = await fetchRange(paddedFrom, to, stale, deadline);
   for (let i = 0; i < rows.length; i += 1000) {
     const { error: upsertError } = await admin
       .from("fx_rates")
