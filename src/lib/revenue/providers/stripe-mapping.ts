@@ -116,13 +116,33 @@ type PriceLike = Pick<
     flat_amount: number | null;
     flat_amount_decimal?: { toString(): string } | string | null;
   }>;
+  currency_options?: Record<string, {
+    unit_amount: number | null;
+    unit_amount_decimal?: { toString(): string } | string | null;
+    tiers?: PriceLike["tiers"];
+  }>;
 };
+
+// Currency options are prices, not exchange rates. Never reuse the default amount
+// when a subscription bills in a different currency.
+export function priceInCurrency(price: PriceLike, currency: string): PriceLike {
+  if (price.currency.toLowerCase() === currency.toLowerCase()) return price;
+  const option = price.currency_options?.[currency.toLowerCase()];
+  if (!option || (price.billing_scheme === "tiered"
+    ? !option.tiers?.length
+    : decimal(option.unit_amount_decimal, option.unit_amount) === null)) {
+    throw new Error("Stripe did not return the price in the subscription currency. Revenue was not updated.");
+  }
+  return { ...price, currency: currency.toLowerCase(), unit_amount: option.unit_amount,
+    unit_amount_decimal: option.unit_amount_decimal, tiers: option.tiers };
+}
 
 export function mapItem(
   item: { id: string; quantity?: number; price: PriceLike },
-  discounts: NormalizedDiscount[]
+  discounts: NormalizedDiscount[],
+  currency = item.price.currency
 ): NormalizedItem {
-  const { price } = item;
+  const price = priceInCurrency(item.price, currency);
   const recurring = price.recurring;
   return {
     id: item.id,

@@ -108,30 +108,38 @@ type ExpandedDiscount = Stripe.Discount & { source: { coupon: string | Stripe.Co
 // Coupons on item-level discounts can't be expanded that deep, so they are fetched once each.
 function couponResolver(stripe: Stripe, stats: Record<string, number>) {
   const cache = new Map<string, Stripe.Coupon | null>();
-  return async (coupon: string | Stripe.Coupon | null) => {
+  return async (coupon: string | Stripe.Coupon | null, currency: string) => {
     if (coupon === null) return null;
-    if (typeof coupon !== "string") return coupon;
-    if (!cache.has(coupon)) {
+    if (typeof coupon !== "string" && (coupon.amount_off === null ||
+      coupon.currency?.toLowerCase() === currency.toLowerCase() || coupon.currency_options?.[currency.toLowerCase()])) return coupon;
+    const id = typeof coupon === "string" ? coupon : coupon.id;
+    if (!cache.has(id)) {
       try {
-        cache.set(coupon, await stripe.coupons.retrieve(coupon, { expand: ["currency_options"] }));
+        cache.set(id, await stripe.coupons.retrieve(id, { expand: ["currency_options"] }));
       } catch (error) {
         if (isAuthenticationError(error)) throw error;
         // Deleted coupons keep applying to existing discounts but can't be read back.
         stats.discountsUnresolved = (stats.discountsUnresolved ?? 0) + 1;
-        cache.set(coupon, null);
+        cache.set(id, null);
       }
     }
-    return cache.get(coupon) ?? null;
+    return cache.get(id) ?? null;
   };
 }
 
-// Tiers are only returned when expanded, which is too deep from a subscription list.
+// Resolve currency-specific tiers directly: expanding them from a subscription list is too deep.
 function priceResolver(stripe: Stripe) {
   const cache = new Map<string, Stripe.Price>();
-  return async (price: Stripe.Price) => {
-    if (price.billing_scheme !== "tiered" || price.tiers) return price;
-    if (!cache.has(price.id)) cache.set(price.id, await stripe.prices.retrieve(price.id, { expand: ["tiers"] }));
-    return cache.get(price.id)!;
+  return async (price: Stripe.Price, currency: string) => {
+    const target = currency.toLowerCase();
+    const mismatch = price.currency.toLowerCase() !== target;
+    const option = price.currency_options?.[target];
+    const tiered = price.billing_scheme === "tiered";
+    if (mismatch ? option && (!tiered || option.tiers?.length) : !tiered || price.tiers?.length) return price;
+    const key = `${price.id}:${target}`;
+    const expand = mismatch ? ["currency_options", ...(tiered ? [`currency_options.${target}.tiers`] : [])] : ["tiers"];
+    if (!cache.has(key)) cache.set(key, await stripe.prices.retrieve(price.id, { expand }));
+    return cache.get(key)!;
   };
 }
 
@@ -147,7 +155,7 @@ async function* fetchSubscriptions(ctx: ProviderContext): AsyncIterable<Normaliz
         ctx.stats.discountsUnresolved = (ctx.stats.discountsUnresolved ?? 0) + 1;
         continue;
       }
-      const coupon = await resolveCoupon((discount as ExpandedDiscount).source?.coupon ?? null);
+      const coupon = await resolveCoupon((discount as ExpandedDiscount).source?.coupon ?? null, currency);
       if (coupon) result.push(mapCoupon(coupon as Parameters<typeof mapCoupon>[0], discount, currency));
     }
     return result;
@@ -174,11 +182,12 @@ async function* fetchSubscriptions(ctx: ProviderContext): AsyncIterable<Normaliz
       if (item.price.currency.toLowerCase() !== subscription.currency.toLowerCase()) {
         ctx.stats.currencyMismatchItems = (ctx.stats.currencyMismatchItems ?? 0) + 1;
       }
-      const price = await resolvePrice(item.price);
+      const price = await resolvePrice(item.price, subscription.currency);
       normalizedItems.push(
         mapItem(
           { id: item.id, quantity: item.quantity, price: price as Parameters<typeof mapItem>[0]["price"] },
-          await toDiscounts(item.discounts, subscription.currency)
+          await toDiscounts(item.discounts, subscription.currency),
+          subscription.currency
         )
       );
     }
