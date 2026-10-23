@@ -7,8 +7,7 @@ import { createAdminClient, type AdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/database.types";
 import { addDays, toDay } from "./dates";
 import { ensureFxRates, loadFxTable, refreshTrackedFxRates } from "./fx-sync";
-import { MissingFxRateError } from "./fx";
-import { isAuthenticationError, isPermissionError } from "./providers/stripe";
+import { classifySyncFailure, retryAtFromStats, SyncFailure } from "./failures";
 import { getRevenueProvider } from "./provider-registry";
 import { buildDailySnapshots, mergeWithExisting } from "./snapshots";
 import type { DailySnapshot, NormalizedSubscription, NormalizedTransaction } from "./types";
@@ -26,33 +25,6 @@ export type SyncOutcome =
   | { status: "succeeded"; mrrCents: number; days: number }
   | { status: "failed"; error: string }
   | { status: "skipped"; reason: string };
-
-class SyncFailure extends Error {
-  constructor(
-    message: string,
-    readonly kind: "revoked" | "permission" | "transient"
-  ) {
-    super(message);
-  }
-}
-
-// Turns provider and internal errors into a short, redacted, human-readable message.
-function classify(error: unknown): SyncFailure {
-  if (error instanceof SyncFailure) return error;
-  if (isAuthenticationError(error)) {
-    return new SyncFailure("Stripe rejected the API key. It was probably revoked or rolled; reconnect with a new key.", "revoked");
-  }
-  if (isPermissionError(error)) {
-    return new SyncFailure(
-      `The key is missing a read permission Stripe needs for this request: ${redactedMessage(error)}`,
-      "permission"
-    );
-  }
-  if (error instanceof MissingFxRateError) {
-    return new SyncFailure(`No exchange rate for ${error.currency}, so revenue in that currency can't be converted to USD.`, "transient");
-  }
-  return new SyncFailure(redactedMessage(error), "transient");
-}
 
 async function collect<T>(iterable: AsyncIterable<T>) {
   const items: T[] = [];
@@ -119,9 +91,17 @@ async function loadExisting(admin: AdminClient, connectionId: string, from: stri
   return existing;
 }
 
-export async function syncConnection(connectionId: string, trigger: SyncTrigger): Promise<SyncOutcome> {
-  const admin = createAdminClient();
+export async function syncConnection(connectionId: string, trigger: SyncTrigger, deadline = Date.now() + 220_000): Promise<SyncOutcome> {
+  const admin = createAdminClient(deadline + 20_000);
   const startedAt = Date.now();
+
+  const { data: previousRun, error: previousRunError } = await admin.from("sync_runs")
+    .select("stats").eq("connection_id", connectionId).eq("stats->>reason", "deferred")
+    .order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (previousRunError) return { status: "skipped", reason: "Could not check the retry schedule. Try again later." };
+  if (retryAtFromStats(previousRun?.stats) > startedAt) {
+    return { status: "skipped", reason: "The provider requested a later retry." };
+  }
 
   const { data: claimed, error: claimError } = await admin.rpc("claim_connection_sync", {
     p_connection_id: connectionId,
@@ -184,18 +164,20 @@ export async function syncConnection(connectionId: string, trigger: SyncTrigger)
     }
 
     // The decrypted key only lives in this scope and is never logged or returned.
-    const ctx = { credentials: decryptSecret(connection.encrypted_credentials, connection.id), stats };
+    const ctx = { credentials: decryptSecret(connection.encrypted_credentials, connection.id), stats, deadline };
     const subscriptions = await collect(provider.fetchSubscriptions(ctx));
     const transactions = await collect(provider.fetchTransactions(ctx, since ? new Date(`${since}T00:00:00Z`) : undefined));
+    if (Date.now() >= deadline) throw new SyncFailure("The sync time budget was reached. It will be retried later.", "deferred", 60_000);
 
     const from = since ?? [earliestActivityDay(subscriptions, transactions, today), addDays(today, -(BACKFILL_DAYS - 1))].sort()[1];
     const fxFrom = since ?? earliestActivityDay(subscriptions, transactions, today);
     const currencies = new Set([...subscriptions.map((s) => s.currency), ...transactions.map((t) => t.currency)]);
-    await ensureFxRates(admin, currencies, fxFrom, today);
+    await ensureFxRates(admin, currencies, fxFrom, today, deadline);
     const fx = await loadFxTable(admin, currencies, fxFrom, today);
 
     const built = buildDailySnapshots({ subscriptions, transactions, fx, from, today, priorTotalCents });
     const snapshots = mergeWithExisting(built.snapshots, await loadExisting(admin, connectionId, from));
+    if (Date.now() >= deadline) throw new SyncFailure("The sync time budget was reached. It will be retried later.", "deferred", 60_000);
     await upsertSnapshots(admin, connectionId, snapshots);
 
     const now = new Date().toISOString();
@@ -232,7 +214,8 @@ export async function syncConnection(connectionId: string, trigger: SyncTrigger)
     invalidate(slug);
     return { status: "succeeded", mrrCents: todayRow.mrrCents, days: snapshots.length };
   } catch (error) {
-    const failure = classify(error);
+    const failure = classifySyncFailure(error);
+    const deferred = failure.kind === "deferred";
     const now = new Date().toISOString();
 
     await admin
@@ -240,8 +223,8 @@ export async function syncConnection(connectionId: string, trigger: SyncTrigger)
       .update({
         status: failure.kind === "revoked" ? "revoked" : failure.kind === "permission" ? "error" : undefined,
         last_synced_at: now,
-        last_error: failure.message,
-        consecutive_failures: connection.consecutive_failures + 1,
+        last_error: deferred ? undefined : failure.message,
+        consecutive_failures: deferred ? connection.consecutive_failures : connection.consecutive_failures + 1,
       })
       .eq("id", connectionId);
     await admin.rpc("refresh_verification", { p_startup_id: connection.startup_id });
@@ -249,16 +232,18 @@ export async function syncConnection(connectionId: string, trigger: SyncTrigger)
       await admin
         .from("sync_runs")
         .update({
-          status: "failed",
+          status: deferred ? "skipped" : "failed",
           finished_at: now,
           error: failure.message,
-          stats: { ...stats, durationMs: Date.now() - startedAt } as Json,
+          stats: { ...stats, durationMs: Date.now() - startedAt, reason: failure.kind,
+            ...(deferred ? { retryAt: new Date(Date.now() + Math.max(60_000, failure.retryAfterMs)).toISOString() } : {}) } as Json,
         })
         .eq("id", run.id);
     }
 
-    console.error(`[sync] connection ${connectionId} failed (${failure.kind}): ${failure.message}`);
+    if (!deferred) console.error(`[sync] connection ${connectionId} failed (${failure.kind}): ${failure.message}`);
     invalidate(slug);
+    if (deferred) return { status: "skipped", reason: failure.message };
     return { status: "failed", error: failure.message };
   }
 }
@@ -272,8 +257,8 @@ type DueOptions = {
 
 // Cron entry point: oldest-synced first, bounded concurrency, time-boxed.
 export async function syncDueConnections({ budgetMs, concurrency = 5, limit = 200 }: DueOptions) {
-  const admin = createAdminClient();
   const deadline = Date.now() + budgetMs;
+  const admin = createAdminClient(deadline);
   const today = toDay(new Date());
 
   await refreshTrackedFxRates(admin, today);
@@ -293,14 +278,14 @@ export async function syncDueConnections({ budgetMs, concurrency = 5, limit = 20
 
   async function worker() {
     while (queue.length > 0) {
-      if (Date.now() > deadline) {
+      if (Date.now() >= deadline - 20_000) {
         notStarted = queue.length;
         queue.length = 0;
         return;
       }
       const next = queue.shift()!;
       try {
-        results[(await syncConnection(next.id, "cron")).status]++;
+        results[(await syncConnection(next.id, "cron", deadline - 20_000)).status]++;
       } catch (e) {
         results.failed++;
         console.error(`[sync] connection ${next.id} crashed: ${redactedMessage(e)}`);

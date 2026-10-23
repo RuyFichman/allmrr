@@ -30,25 +30,25 @@ describe("Stripe currency expansion", () => {
     const unexpanded = { ...fixture, currency_options: undefined };
     const coupon = { id: "coupon", percent_off: null, amount_off: 100, currency: "usd", duration: "forever" };
     const discounts = [{ id: "discount", start: 1767225600, end: null, source: { coupon } }];
-    sdk.subscriptions.list.mockReturnValue([
+    sdk.subscriptions.list.mockResolvedValue({ has_more: false, data: [
       subscription("usd", "usd", unexpanded),
       subscription("eur1", "eur", unexpanded, discounts),
       subscription("eur2", "eur", unexpanded, discounts),
-    ]);
+    ] });
     sdk.prices.retrieve.mockResolvedValue(fixture);
     sdk.coupons.retrieve.mockResolvedValue({ ...coupon, currency_options: { eur: { amount_off: 50 } } });
     const rows = [];
     for await (const row of stripeProvider.fetchSubscriptions({ credentials: "fixture", stats: {} })) rows.push(row);
     expect(rows.map((row) => row.items[0].unitAmount)).toEqual([1000, 800.25, 800.25]);
     expect(rows[1].discounts[0]).toMatchObject({ amountOff: 50, currency: "EUR" });
-    expect(sdk.prices.retrieve).toHaveBeenCalledExactlyOnceWith("price_multi", { expand: ["currency_options"] });
-    expect(sdk.coupons.retrieve).toHaveBeenCalledExactlyOnceWith("coupon", { expand: ["currency_options"] });
+    expect(sdk.prices.retrieve).toHaveBeenCalledExactlyOnceWith("price_multi", { expand: ["currency_options"] }, expect.objectContaining({ maxNetworkRetries: 0 }));
+    expect(sdk.coupons.retrieve).toHaveBeenCalledExactlyOnceWith("coupon", { expand: ["currency_options"] }, expect.objectContaining({ maxNetworkRetries: 0 }));
   });
 
   it("expands local tiers even when default-currency tiers are present", async () => {
     const price = { ...fixture, billing_scheme: "tiered", tiers_mode: "volume",
       tiers: [{ up_to: null, unit_amount: 9000, flat_amount: null }], currency_options: undefined };
-    sdk.subscriptions.list.mockReturnValue([subscription("eur", "eur", price)]);
+    sdk.subscriptions.list.mockResolvedValue({ has_more: false, data: [subscription("eur", "eur", price)] });
     sdk.prices.retrieve.mockResolvedValue({ ...price, currency_options: { eur: { unit_amount: null,
       tiers: [{ up_to: null, unit_amount: 200, flat_amount: null }] } } });
     const rows = [];
@@ -56,11 +56,11 @@ describe("Stripe currency expansion", () => {
     expect(rows[0].items[0].tiers[0].unitAmount).toBe(200);
     expect(sdk.prices.retrieve).toHaveBeenCalledExactlyOnceWith("price_multi", {
       expand: ["currency_options", "currency_options.eur.tiers"],
-    });
+    }, expect.objectContaining({ maxNetworkRetries: 0 }));
   });
 
   it("does not yield a misleading subscription if the target price is unavailable", async () => {
-    sdk.subscriptions.list.mockReturnValue([subscription("brl", "brl", fixture)]);
+    sdk.subscriptions.list.mockResolvedValue({ has_more: false, data: [subscription("brl", "brl", fixture)] });
     sdk.prices.retrieve.mockResolvedValue(fixture);
     const iterator = stripeProvider.fetchSubscriptions({ credentials: "fixture", stats: {} })[Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toThrow("subscription currency");

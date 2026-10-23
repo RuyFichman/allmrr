@@ -18,6 +18,7 @@ import {
   mapSubscriptionShell,
 } from "./stripe-mapping";
 import { STRIPE_PERMISSIONS, type StripePermission } from "./stripe-permissions";
+import { stripePages, stripeRead, StripeResourceMissingError } from "./stripe-read";
 
 // Pinned to the API version bundled with the installed SDK, so the types match responses.
 export const STRIPE_API_VERSION = Stripe.API_VERSION;
@@ -106,7 +107,7 @@ async function validateCredentials(rawKey: string): Promise<ValidationResult> {
 type ExpandedDiscount = Stripe.Discount & { source: { coupon: string | Stripe.Coupon | null } };
 
 // Coupons on item-level discounts can't be expanded that deep, so they are fetched once each.
-function couponResolver(stripe: Stripe, stats: Record<string, number>) {
+function couponResolver(stripe: Stripe, stats: Record<string, number>, deadline: number) {
   const cache = new Map<string, Stripe.Coupon | null>();
   return async (coupon: string | Stripe.Coupon | null, currency: string) => {
     if (coupon === null) return null;
@@ -115,9 +116,9 @@ function couponResolver(stripe: Stripe, stats: Record<string, number>) {
     const id = typeof coupon === "string" ? coupon : coupon.id;
     if (!cache.has(id)) {
       try {
-        cache.set(id, await stripe.coupons.retrieve(id, { expand: ["currency_options"] }));
+        cache.set(id, await stripeRead((options) => stripe.coupons.retrieve(id, { expand: ["currency_options"] }, options), deadline));
       } catch (error) {
-        if (isAuthenticationError(error)) throw error;
+        if (!(error instanceof StripeResourceMissingError)) throw error;
         // Deleted coupons keep applying to existing discounts but can't be read back.
         stats.discountsUnresolved = (stats.discountsUnresolved ?? 0) + 1;
         cache.set(id, null);
@@ -128,7 +129,7 @@ function couponResolver(stripe: Stripe, stats: Record<string, number>) {
 }
 
 // Resolve currency-specific tiers directly: expanding them from a subscription list is too deep.
-function priceResolver(stripe: Stripe) {
+function priceResolver(stripe: Stripe, deadline: number) {
   const cache = new Map<string, Stripe.Price>();
   return async (price: Stripe.Price, currency: string) => {
     const target = currency.toLowerCase();
@@ -138,15 +139,16 @@ function priceResolver(stripe: Stripe) {
     if (mismatch ? option && (!tiered || option.tiers?.length) : !tiered || price.tiers?.length) return price;
     const key = `${price.id}:${target}`;
     const expand = mismatch ? ["currency_options", ...(tiered ? [`currency_options.${target}.tiers`] : [])] : ["tiers"];
-    if (!cache.has(key)) cache.set(key, await stripe.prices.retrieve(price.id, { expand }));
+    if (!cache.has(key)) cache.set(key, await stripeRead((options) => stripe.prices.retrieve(price.id, { expand }, options), deadline));
     return cache.get(key)!;
   };
 }
 
 async function* fetchSubscriptions(ctx: ProviderContext): AsyncIterable<NormalizedSubscription> {
   const stripe = createStripeClient(ctx.credentials);
-  const resolveCoupon = couponResolver(stripe, ctx.stats);
-  const resolvePrice = priceResolver(stripe);
+  const deadline = ctx.deadline ?? Date.now() + 220_000;
+  const resolveCoupon = couponResolver(stripe, ctx.stats, deadline);
+  const resolvePrice = priceResolver(stripe, deadline);
 
   const toDiscounts = async (discounts: Array<string | Stripe.Discount>, currency: string) => {
     const result: NormalizedDiscount[] = [];
@@ -161,18 +163,22 @@ async function* fetchSubscriptions(ctx: ProviderContext): AsyncIterable<Normaliz
     return result;
   };
 
-  const subscriptions = stripe.subscriptions.list({
+  const subscriptions = stripePages((cursor, options) => stripe.subscriptions.list({
     status: "all",
     limit: 100,
     expand: ["data.discounts.source.coupon", "data.items.data.discounts"],
-  });
+    ...(cursor ? { starting_after: cursor } : {}),
+  }, options), deadline);
 
   // Auto-pagination fetches pages sequentially, which keeps us well under rate limits.
   for await (const subscription of subscriptions) {
     let items = subscription.items.data;
     if (subscription.items.has_more) {
       items = [];
-      for await (const item of stripe.subscriptionItems.list({ subscription: subscription.id, limit: 100, expand: ["data.discounts"] })) {
+      for await (const item of stripePages((cursor, options) => stripe.subscriptionItems.list({
+        subscription: subscription.id, limit: 100, expand: ["data.discounts"],
+        ...(cursor ? { starting_after: cursor } : {}),
+      }, options), deadline)) {
         items.push(item);
       }
     }
@@ -199,10 +205,11 @@ async function* fetchSubscriptions(ctx: ProviderContext): AsyncIterable<Normaliz
 
 async function* fetchTransactions(ctx: ProviderContext, since?: Date): AsyncIterable<NormalizedTransaction> {
   const stripe = createStripeClient(ctx.credentials);
-  const transactions = stripe.balanceTransactions.list({
+  const transactions = stripePages((cursor, options) => stripe.balanceTransactions.list({
     limit: 100,
     ...(since ? { created: { gte: Math.floor(since.getTime() / 1000) } } : {}),
-  });
+    ...(cursor ? { starting_after: cursor } : {}),
+  }, options), ctx.deadline ?? Date.now() + 220_000);
   for await (const transaction of transactions) {
     ctx.stats.balanceTransactionsFetched = (ctx.stats.balanceTransactionsFetched ?? 0) + 1;
     yield mapBalanceTransaction(transaction);

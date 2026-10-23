@@ -6,6 +6,9 @@ import { AlertTriangleIcon, RefreshCwIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTimeUtc, formatPercent, formatUsd } from "@/lib/format";
+import { needsConnectionAttention } from "@/lib/revenue/failures";
+import { STRIPE_PERMISSIONS } from "@/lib/revenue/providers/stripe-permissions";
+import { ConnectStripeForm } from "./connect-stripe-form";
 import { disconnectStripe, syncStripeNow, type RevenueActionState } from "../../revenue-actions";
 
 export type ConnectionView = {
@@ -15,6 +18,7 @@ export type ConnectionView = {
   syncing: boolean;
   lastSuccessAt: string | null;
   lastError: string | null;
+  consecutiveFailures: number;
   connectedAt: string;
   run: {
     status: string;
@@ -36,7 +40,7 @@ export type ConnectionView = {
 
 const POLL_MS = 4000;
 
-export function ConnectionPanel({ startupId, connection }: { startupId: string; connection: ConnectionView }) {
+export function ConnectionPanel({ startupId, connection, testMode = false }: { startupId: string; connection: ConnectionView; testMode?: boolean }) {
   const router = useRouter();
   const [syncState, syncAction, syncPending] = useActionState<RevenueActionState>(syncStripeNow.bind(null, startupId), {});
   const [disconnectState, disconnectAction, disconnectPending] = useActionState<RevenueActionState>(
@@ -44,6 +48,8 @@ export function ConnectionPanel({ startupId, connection }: { startupId: string; 
     {}
   );
   const [confirming, setConfirming] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const attention = needsConnectionAttention(connection.status, connection.consecutiveFailures);
 
   // While a background sync runs (or was just requested), refresh until it finishes.
   const polling = connection.syncing || syncState.ok === true;
@@ -93,7 +99,27 @@ export function ConnectionPanel({ startupId, connection }: { startupId: string; 
         </div>
       </dl>
 
-      {connection.lastError && !connection.syncing && (
+      {attention && (
+        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangleIcon className="size-4 shrink-0" aria-hidden="true" />
+            Your revenue connection needs attention
+          </p>
+          <p className="mt-2 break-words">{connection.lastError ?? "Revenue sync has failed repeatedly."}</p>
+          <p className="mt-2">Reconnect if the key was revoked or its permissions changed. Otherwise, try syncing again.
+            Verification expires 72 hours after the last successful sync unless another active connection is current.</p>
+          <Button type="button" variant="outline" className="mt-3" aria-expanded={reconnecting}
+            aria-controls="reconnect-stripe" onClick={() => setReconnecting(!reconnecting)}>
+            {reconnecting ? "Close reconnect form" : "Reconnect Stripe"}
+          </Button>
+        </div>
+      )}
+      {reconnecting && (
+        <div id="reconnect-stripe">
+          <ConnectStripeForm startupId={startupId} permissions={STRIPE_PERMISSIONS} testMode={testMode} wasDisconnected={false} />
+        </div>
+      )}
+      {connection.lastError && !attention && !connection.syncing && (
         <p role="alert" className="flex gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {connection.lastError}
@@ -193,7 +219,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border p-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd>
+      <dd className="mt-0.5 break-words text-lg font-semibold tabular-nums">{value}</dd>
     </div>
   );
 }
